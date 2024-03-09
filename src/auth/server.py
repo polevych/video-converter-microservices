@@ -1,13 +1,9 @@
-import jwt
-import datetime
-import os
+import jwt, datetime, os
 from flask import Flask, request
 from flask_mysqldb import MySQL
-from flask_bcrypt import Bcrypt
 
 server = Flask(__name__)
 mysql = MySQL(server)
-bcrypt = Bcrypt(server)
 
 # config
 server.config["MYSQL_HOST"] = os.environ.get("MYSQL_HOST")
@@ -16,13 +12,14 @@ server.config["MYSQL_PASSWORD"] = os.environ.get("MYSQL_PASSWORD")
 server.config["MYSQL_DB"] = os.environ.get("MYSQL_DB")
 server.config["MYSQL_PORT"] = int(os.environ.get("MYSQL_PORT"))
 
+
 @server.route("/login", methods=["POST"])
 def login():
     auth = request.authorization
     if not auth:
-        return "no credentials provided", 401
-    
-    # check db for username and hashed password
+        return "missing credentials", 401
+
+    # check db for username and password
     cur = mysql.connection.cursor()
     res = cur.execute(
         "SELECT email, password FROM user WHERE email=%s", (auth.username,)
@@ -31,18 +28,19 @@ def login():
     if res > 0:
         user_row = cur.fetchone()
         email = user_row[0]
-        hashed_password = user_row[1]
+        password = user_row[1]
 
-        if auth.username != email or not bcrypt.check_password_hash(hashed_password, auth.password):
+        if auth.username != email or auth.password != password:
             return "invalid credentials", 401
         else:
             return createJWT(auth.username, os.environ.get("JWT_SECRET"), True)
     else:
-        return "invalid credentials", 401
+        return "invalide credentials", 401
+
 
 @server.route("/validate", methods=["POST"])
 def validate():
-    encoded_jwt = request.headers.get("Authorization")
+    encoded_jwt = request.headers["Authorization"]
 
     if not encoded_jwt:
         return "missing credentials", 401
@@ -53,10 +51,8 @@ def validate():
         decoded = jwt.decode(
             encoded_jwt, os.environ.get("JWT_SECRET"), algorithms=["HS256"]
         )
-    except jwt.ExpiredSignatureError:
-        return "token has expired", 401
-    except jwt.InvalidTokenError:
-        return "invalid token", 401
+    except:
+        return "not authorized", 403
 
     return decoded, 200
 
